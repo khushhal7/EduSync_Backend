@@ -1,36 +1,37 @@
 // EduSync/Program.cs (Backend Project)
 
 using Microsoft.EntityFrameworkCore;
-using EduSync.Data;
-using EduSync.Settings; // Using your 'Configuration' folder for EmailSettings
-using EduSync.Services; 
+using EduSync.Data; // Using your 'Configuration' folder for EmailSettings
+using EduSync.Services;
+using EduSync.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Define a specific CORS policy name
-var MyAllowSpecificOrigins = "_myAllowSpecificOrigins"; 
+var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
 
 // 1. Configure DbContext (Existing code)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<EduSyncDbContext>(options =>
-    options.UseSqlServer(connectionString, sqlServerOptionsAction: sqlOptions => // Added SQL Server options for resiliency
+    options.UseSqlServer(connectionString, sqlServerOptionsAction: sqlOptions =>
     {
         sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5, 
-            maxRetryDelay: TimeSpan.FromSeconds(30), 
-            errorNumbersToAdd: null); 
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
     }));
 
 
-// 2. Add CORS services and define a policy (Existing code)
+// 2. Add CORS services and define a policy
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: MyAllowSpecificOrigins,
                       policy =>
                       {
-                          policy.WithOrigins("http://localhost:5173") // Your local frontend's origin
-                                // TODO: Add your deployed frontend's URL here later for Azure Static Web App
-                                // .WithOrigins("https://YOUR_STATIC_WEB_APP_URL.azurestaticapps.net") 
+                          policy.WithOrigins(
+                                    "http://localhost:5173", // Your local frontend's origin
+                                    "https://kind-mud-0c1cc5000.6.azurestaticapps.net" // <-- ADDED: Your deployed frontend URL
+                                 )
                                 .AllowAnyHeader()
                                 .AllowAnyMethod();
                       });
@@ -57,9 +58,6 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "EduSync API V1");
-    // If deploying to a virtual directory or path, you might need:
-    // string swaggerJsonBasePath = string.IsNullOrWhiteSpace(c.RoutePrefix) ? "." : "..";
-    // c.SwaggerEndpoint($"{swaggerJsonBasePath}/swagger/v1/swagger.json", "EduSync API V1");
 });
 
 
