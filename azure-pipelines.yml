@@ -1,0 +1,59 @@
+# azure-pipelines.yml (for ASP.NET Core Backend)
+
+trigger:
+- main # Or your primary branch, e.g., master, develop
+
+pool:
+  vmImage: 'windows-latest' # Or 'ubuntu-latest'
+
+variables:
+  solution: '**/*.sln' 
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  projectPath: 'EduSync/EduSync.csproj' # Path from repo root to your API project's .csproj file
+
+steps:
+- task: UseDotNet@2
+  displayName: 'Use .NET SDK'
+  inputs:
+    packageType: 'sdk'
+    version: '8.x' # IMPORTANT: Specify the .NET SDK version your project uses (e.g., 6.x, 7.x, 8.x)
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+- task: DotNetCoreCLI@2
+  displayName: 'Restore Dependencies'
+  inputs:
+    command: 'restore'
+    projects: '$(solution)'
+    feedsToUse: 'select'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Solution'
+  inputs:
+    command: 'build'
+    projects: '$(solution)'
+    arguments: '--configuration $(buildConfiguration)'
+
+# TODO: Add a step to run tests once you have them
+# - task: DotNetCoreCLI@2
+#   displayName: 'Run Tests'
+#   inputs:
+#     command: 'test'
+#     projects: '**/*[Tt]ests/*.csproj' # Path to your test projects
+#     arguments: '--configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish API Project'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false 
+    projects: '$(projectPath)' 
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/api'
+    zipAfterPublish: true 
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: api'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)/api'
+    ArtifactName: 'api-app' 
+    publishLocation: 'Container'
