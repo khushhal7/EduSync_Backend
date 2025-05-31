@@ -47,6 +47,7 @@ builder.Services.AddTransient<IEmailService, SendGridEmailService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddApplicationInsightsTelemetry(builder.Configuration["ApplicationInsights:InstrumentationKey"]);
 
 var app = builder.Build();
 
