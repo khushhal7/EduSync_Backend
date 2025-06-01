@@ -8,6 +8,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using EduSync.Services; // <-- Add this for IEventHubService
+using System.Text.Json;  // <-- Add this for JsonSerializer
 
 namespace EduSync.Controllers
 {
@@ -16,10 +18,13 @@ namespace EduSync.Controllers
     public class ResultsController : ControllerBase
     {
         private readonly EduSyncDbContext _context;
+        private readonly IEventHubService _eventHubService; // <-- Inject IEventHubService
 
-        public ResultsController(EduSyncDbContext context)
+        // Update constructor to inject IEventHubService
+        public ResultsController(EduSyncDbContext context, IEventHubService eventHubService)
         {
             _context = context;
+            _eventHubService = eventHubService;
         }
 
         // POST: api/results
@@ -31,33 +36,27 @@ namespace EduSync.Controllers
                 return BadRequest(ModelState);
             }
 
-            // Check if the Assessment exists
             var assessment = await _context.Assessments.FindAsync(resultForCreationDto.AssessmentId);
             if (assessment == null)
             {
                 return BadRequest($"Assessment with ID {resultForCreationDto.AssessmentId} not found.");
             }
 
-            // Check if the User (student) exists
             var user = await _context.Users.FindAsync(resultForCreationDto.UserId);
             if (user == null)
             {
                 return BadRequest($"User with ID {resultForCreationDto.UserId} not found.");
             }
 
-            // **Role Check: Ensure the user submitting the result is a Student**
             if (user.Role != "Student")
             {
                 return BadRequest($"User with ID {resultForCreationDto.UserId} is not a student and cannot submit results.");
             }
 
-
-            // Optional: Check if score exceeds MaxScore for the assessment
             if (resultForCreationDto.Score > assessment.MaxScore)
             {
                 return BadRequest($"Score ({resultForCreationDto.Score}) cannot exceed the maximum score ({assessment.MaxScore}) for this assessment.");
             }
-
 
             var result = new Result
             {
@@ -65,22 +64,40 @@ namespace EduSync.Controllers
                 AssessmentId = resultForCreationDto.AssessmentId,
                 UserId = resultForCreationDto.UserId,
                 Score = resultForCreationDto.Score,
-                AttemptDate = DateTime.UtcNow // Set attempt date on the server
+                AttemptDate = DateTime.UtcNow
             };
 
             _context.Results.Add(result);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(); // Save result to the database
 
             var resultToReturn = new ResultDto
             {
                 ResultId = result.ResultId,
                 AssessmentId = result.AssessmentId,
-                AssessmentTitle = assessment.Title, // Populate from fetched assessment
+                AssessmentTitle = assessment.Title,
                 UserId = result.UserId,
-                UserName = user.Name, // Populate from fetched user
+                UserName = user.Name,
                 Score = result.Score,
                 AttemptDate = result.AttemptDate
             };
+
+            // --- Send event to Event Hub AFTER successful save ---
+            try
+            {
+                // Serialize the result DTO (or a custom event object) to JSON
+                string eventDataJson = JsonSerializer.Serialize(resultToReturn);
+                await _eventHubService.SendEventAsync(eventDataJson);
+                System.Diagnostics.Debug.WriteLine($"Successfully sent quiz attempt event to Event Hub for ResultId: {result.ResultId}");
+            }
+            catch (Exception ex)
+            {
+                // Log the error from sending to Event Hub, but don't fail the HTTP response
+                // because the primary operation (saving the result) was successful.
+                // In a production system, use a proper logger (e.g., ILogger).
+                System.Diagnostics.Debug.WriteLine($"Error sending quiz attempt event to Event Hub for ResultId {result.ResultId}: {ex.Message}");
+                // Optionally, you might want to add this to a dead-letter queue or retry mechanism for events.
+            }
+            // --- End Send event to Event Hub ---
 
             return CreatedAtAction(nameof(GetResultById), new { id = result.ResultId }, resultToReturn);
         }
@@ -90,8 +107,8 @@ namespace EduSync.Controllers
         public async Task<ActionResult<ResultDto>> GetResultById(Guid id)
         {
             var result = await _context.Results
-                .Include(r => r.Assessment) // Include Assessment for AssessmentTitle
-                .Include(r => r.User)       // Include User for UserName
+                .Include(r => r.Assessment)
+                .Include(r => r.User)
                 .Where(r => r.ResultId == id)
                 .Select(r => new ResultDto
                 {
@@ -117,7 +134,6 @@ namespace EduSync.Controllers
         [HttpGet("user/{userId}")]
         public async Task<ActionResult<IEnumerable<ResultDto>>> GetResultsForUser(Guid userId)
         {
-            // Check if user exists
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
             {
@@ -127,14 +143,14 @@ namespace EduSync.Controllers
             var results = await _context.Results
                 .Where(r => r.UserId == userId)
                 .Include(r => r.Assessment)
-                .Include(r => r.User) // Though User is already known, including for consistency or if other user details were needed
+                .Include(r => r.User)
                 .Select(r => new ResultDto
                 {
                     ResultId = r.ResultId,
                     AssessmentId = r.AssessmentId,
                     AssessmentTitle = r.Assessment.Title,
                     UserId = r.UserId,
-                    UserName = r.User.Name, // Or user.Name directly from the user variable
+                    UserName = r.User.Name,
                     Score = r.Score,
                     AttemptDate = r.AttemptDate
                 })
@@ -147,7 +163,6 @@ namespace EduSync.Controllers
         [HttpGet("assessment/{assessmentId}")]
         public async Task<ActionResult<IEnumerable<ResultDto>>> GetResultsForAssessment(Guid assessmentId)
         {
-            // Check if assessment exists
             var assessment = await _context.Assessments.FindAsync(assessmentId);
             if (assessment == null)
             {
@@ -156,13 +171,13 @@ namespace EduSync.Controllers
 
             var results = await _context.Results
                 .Where(r => r.AssessmentId == assessmentId)
-                .Include(r => r.Assessment) // Though Assessment is known, including for consistency
+                .Include(r => r.Assessment)
                 .Include(r => r.User)
                 .Select(r => new ResultDto
                 {
                     ResultId = r.ResultId,
                     AssessmentId = r.AssessmentId,
-                    AssessmentTitle = r.Assessment.Title, // Or assessment.Title directly
+                    AssessmentTitle = r.Assessment.Title,
                     UserId = r.UserId,
                     UserName = r.User.Name,
                     Score = r.Score,

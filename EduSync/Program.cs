@@ -1,9 +1,12 @@
 // EduSync/Program.cs (Backend Project)
 
 using Microsoft.EntityFrameworkCore;
-using EduSync.Data; // Using your 'Configuration' folder for EmailSettings
+using EduSync.Data;
+using EduSync.Settings; // For EmailSettings and EventHubSettings
 using EduSync.Services;
-using EduSync.Settings;
+using EduSync.Configuration;
+// If EventHubSettings.cs is in a 'Configuration' folder, use:
+ using EduSync.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,7 +33,7 @@ builder.Services.AddCors(options =>
                       {
                           policy.WithOrigins(
                                     "http://localhost:5173", // Your local frontend's origin
-                                    "https://kind-mud-0c1cc5000.6.azurestaticapps.net" // <-- ADDED: Your deployed frontend URL
+                                    "https://kind-mud-0c1cc5000.6.azurestaticapps.net" // Your deployed frontend URL
                                  )
                                 .AllowAnyHeader()
                                 .AllowAnyMethod();
@@ -41,20 +44,32 @@ builder.Services.AddCors(options =>
 // Configure EmailSettings
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 
+// Configure EventHubSettings
+builder.Services.Configure<EventHubSettings>(builder.Configuration.GetSection("EventHubSettings"));
+
 // Register IEmailService and its implementation
 builder.Services.AddTransient<IEmailService, SendGridEmailService>();
+
+// Register IEventHubService and its implementation  <-- NEWLY ADDED
+// EventHubProducerClient is thread-safe and intended to be long-lived.
+// A singleton lifetime for EventHubService (which holds the producer client) is appropriate.
+builder.Services.AddSingleton<IEventHubService, EventHubService>();
+
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddApplicationInsightsTelemetry(builder.Configuration["ApplicationInsights:InstrumentationKey"]);
+
+var appInsightsKey = builder.Configuration["ApplicationInsights:InstrumentationKey"];
+if (!string.IsNullOrEmpty(appInsightsKey))
+{
+    builder.Services.AddApplicationInsightsTelemetry(appInsightsKey);
+}
+
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-// Always enable Swagger and Swagger UI for now for easier testing on Azure.
-// In a production scenario, you might want to conditionally enable this
-// or protect the Swagger endpoint.
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -66,7 +81,7 @@ app.UseHttpsRedirection();
 
 app.UseCors(MyAllowSpecificOrigins);
 
-app.UseAuthorization(); // Ensure this is after UseCors
+app.UseAuthorization();
 
 app.MapControllers();
 
