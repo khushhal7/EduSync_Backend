@@ -13,17 +13,20 @@ namespace EduSync.Services // Or your project's namespace
     {
         private readonly string _connectionString;
         private readonly string _containerName;
-        // private readonly IConfiguration _configuration; // Not strictly needed if only accessing specific keys
 
         public BlobStorageService(IConfiguration configuration)
         {
-            // _configuration = configuration; // Store if needed for other things
-            _connectionString = configuration["AzureBlobStorage:ConnectionString"];
-            _containerName = configuration["AzureBlobStorage:ContainerName"];
+            // Retrieve connection string using GetConnectionString for "MyBlobStorage"
+            _connectionString = configuration["MyBlobStorage:ConnectionString"];
+
+            // Retrieve container name from configuration (e.g., appsettings or App Service application settings)
+            // Assumes a structure like: "AzureBlobStorage": { "ContainerName": "coursemedia" }
+            // Or in App Service Application Settings: AzureBlobStorage__ContainerName
+            _containerName = configuration["MyBlobStorage:ContainerName"];
 
             if (string.IsNullOrEmpty(_connectionString))
             {
-                throw new InvalidOperationException("Azure Blob Storage ConnectionString is not configured. Check configuration section 'AzureBlobStorage:ConnectionString'.");
+                throw new InvalidOperationException("Azure Blob Storage ConnectionString (named 'MyBlobStorage') is not configured correctly in the ConnectionStrings section.");
             }
             if (string.IsNullOrEmpty(_containerName))
             {
@@ -56,8 +59,6 @@ namespace EduSync.Services // Or your project's namespace
                     var uploadOptions = new BlobUploadOptions
                     {
                         HttpHeaders = new BlobHttpHeaders { ContentType = file.ContentType }
-                        // Overwrite is true by default for UploadAsync with BlobUploadOptions 
-                        // unless specific BlobRequestConditions are set to prevent it.
                     };
                     await blobClient.UploadAsync(stream, uploadOptions);
                 }
