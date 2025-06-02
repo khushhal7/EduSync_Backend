@@ -4,9 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using EduSync.Data;
 using EduSync.Settings; // For EmailSettings and EventHubSettings
 using EduSync.Services;
-using EduSync.Configuration;
-// If EventHubSettings.cs is in a 'Configuration' folder, use:
- using EduSync.Configuration;
+// If EventHubSettings.cs or BlobStorageSettings (if you create one) are in a 'Configuration' folder, adjust using:
+using EduSync.Configuration; // Assuming EmailSettings, EventHubSettings, and a potential BlobStorageSettings might be here or in .Settings
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,14 +45,22 @@ builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Emai
 
 // Configure EventHubSettings
 builder.Services.Configure<EventHubSettings>(builder.Configuration.GetSection("EventHubSettings"));
+// Note: BlobStorageService directly uses IConfiguration for ConnectionString and ContainerName,
+// so explicit Configure for a BlobStorageSettings class is not added unless you create one.
 
 // Register IEmailService and its implementation
 builder.Services.AddTransient<IEmailService, SendGridEmailService>();
 
-// Register IEventHubService and its implementation  <-- NEWLY ADDED
-// EventHubProducerClient is thread-safe and intended to be long-lived.
-// A singleton lifetime for EventHubService (which holds the producer client) is appropriate.
+// Register IEventHubService and its implementation
 builder.Services.AddSingleton<IEventHubService, EventHubService>();
+
+// Register IBlobStorageService and its implementation  <-- NEWLY ADDED
+// BlobServiceClient can be managed as a singleton or created per operation.
+// If BlobStorageService creates BlobServiceClient per call or manages it internally for short-lived operations,
+// AddTransient or AddScoped might be suitable.
+// If BlobStorageService holds a long-lived BlobServiceClient, Singleton would be appropriate.
+// Given our current BlobStorageService creates clients per call, AddTransient is fine.
+builder.Services.AddTransient<IBlobStorageService, BlobStorageService>();
 
 
 builder.Services.AddControllers();
